@@ -1,0 +1,451 @@
+openapi: 3.0.0
+info:
+  title: EmoTodo API
+  description: Emotion-aware TODO management system API
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+
+components:
+  securitySchemes:
+    FirebaseAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase ID token
+  
+  schemas:
+    Task:
+      type: object
+      required: [id, description, userId, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        description:
+          type: string
+          maxLength: 500
+        userId:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, deleted]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        micronote:
+          type: string
+          maxLength: 200
+          nullable: true
+        priority:
+          type: string
+          enum: [low, medium, high]
+        estimatedDuration:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          nullable: true
+
+    Emotion:
+      type: object
+      required: [id, name, emoji, color, category, energy, displayOrder]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 20
+        emoji:
+          type: string
+        color:
+          type: string
+          pattern: '^#[0-9a-fA-F]{6}$'
+        category:
+          type: string
+          enum: [positive, negative, neutral]
+        energy:
+          type: string
+          enum: [high, medium, low]
+        displayOrder:
+          type: integer
+
+    EmotionEntry:
+      type: object
+      required: [id, taskId, emotionId, type, timestamp, userId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        emotionId:
+          type: string
+        type:
+          type: string
+          enum: [creation, completion]
+        timestamp:
+          type: string
+          format: date-time
+        userId:
+          type: string
+
+    CreateTaskRequest:
+      type: object
+      required: [description, emotionId]
+      properties:
+        description:
+          type: string
+          maxLength: 500
+        emotionId:
+          type: string
+        micronote:
+          type: string
+          maxLength: 200
+        estimatedDuration:
+          type: integer
+          minimum: 1
+          maximum: 1440
+
+    UpdateTaskRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          maxLength: 500
+        status:
+          type: string
+          enum: [completed, deleted]
+        micronote:
+          type: string
+          maxLength: 200
+        completionEmotionId:
+          type: string
+
+    DashboardResponse:
+      type: object
+      properties:
+        period:
+          type: string
+          enum: [week, month]
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        emotionDistribution:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              count:
+                type: integer
+              percentage:
+                type: number
+        completionRates:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              completed:
+                type: integer
+              total:
+                type: integer
+              rate:
+                type: number
+        emotionChanges:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+              count:
+                type: integer
+        suggestions:
+          type: object
+          properties:
+            currentEmotion:
+              type: string
+            recommendedTasks:
+              type: array
+              items:
+                type: string
+            reasoning:
+              type: string
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+security:
+  - FirebaseAuth: []
+
+paths:
+  /tasks:
+    get:
+      summary: List user's tasks with optional filtering
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, completed, deleted]
+        - name: emotionId
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        200:
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  total:
+                    type: integer
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a new task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        201:
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        400:
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /tasks/{taskId}:
+    get:
+      summary: Get a specific task
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        404:
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      summary: Update a task
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskRequest'
+      responses:
+        200:
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        400:
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        404:
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /emotions:
+    get:
+      summary: Get list of available emotions
+      responses:
+        200:
+          description: List of emotions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  emotions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Emotion'
+
+  /dashboard:
+    get:
+      summary: Get user's emotion analytics dashboard
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [week, month]
+            default: week
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        200:
+          description: Dashboard analytics data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /sharing:
+    post:
+      summary: Share tasks with another user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserEmail]
+              properties:
+                targetUserEmail:
+                  type: string
+                  format: email
+      responses:
+        200:
+          description: Sharing setup successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  sharedWithUser:
+                    type: object
+                    properties:
+                      uid:
+                        type: string
+                      email:
+                        type: string
+                      displayName:
+                        type: string
+        400:
+          description: Invalid request or user not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Stop sharing tasks with a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId]
+              properties:
+                targetUserId:
+                  type: string
+      responses:
+        200:
+          description: Sharing removed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string

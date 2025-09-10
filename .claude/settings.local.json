@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/create-new-feature.sh:*)",
+      "Bash(chmod:*)",
+      "Bash(scripts/setup-plan.sh:*)",
+      "WebSearch",
+      "WebSearch",
+      "WebSearch",
+      "WebSearch",
+      "Bash(scripts/update-agent-context.sh:*)",
+      "Bash(scripts/check-task-prerequisites.sh:*)",
+      "Bash(find:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
